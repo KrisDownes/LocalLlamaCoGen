@@ -1,0 +1,100 @@
+{
+    "name": "vscode-local-llm",
+    "displayName": "Local LLM",
+    "description": "VSCode extension for local LLM interaction",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onCommand:vscode-local-llm.invoke"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "vscode-local-llm.invoke",
+                "title": "Invoke Local LLM"
+            },
+            {
+                "command": "vscode-local-llm.cancel",
+                "title": "Cancel LLM Stream"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "vscode-local-llm.invoke",
+                "key": "ctrl+shift+l",
+                "mac": "cmd+shift+l"
+            },
+            {
+                "command": "vscode-local-llm.cancel",
+                "key": "escape"
+            }
+        ],
+        "configuration": {
+            "title": "Local LLM",
+            "properties": {
+                "localLLM.modelPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to local Llama model"
+                },
+                "localLLM.apiUrl": {
+                    "type": "string",
+                    "default": "",
+                    "description": "API URL for cloud LLM services"
+                },
+                "localLLM.apiKeyName": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Environment variable name for API key"
+                },
+                "localLLM.model": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Model identifier for cloud LLM services"
+                },
+                "localLLM.systemPrompt": {
+                    "type": "string",
+                    "default": "You are a helpful assistant.",
+                    "description": "System prompt for the LLM"
+                },
+                "localLLM.replaceSelection": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Replace selected text with LLM output"
+                },
+                "localLLM.useLocalModel": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Use local model instead of cloud services"
+                },
+                "localLLM.maxTokens": {
+                    "type": "number",
+                    "default": 4096,
+                    "description": "Maximum number of tokens to generate"
+                }
+                
+                
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "lint": "eslint src --ext ts",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/node": "^16.18.116",
+        "@types/vscode": "^1.60.0",
+        "@typescript-eslint/eslint-plugin": "^5.30.0",
+        "@typescript-eslint/parser": "^5.30.0",
+        "eslint": "^8.13.0",
+        "typescript": "^4.9.5"
+    }
+}

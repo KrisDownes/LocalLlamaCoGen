@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
-import { IncomingMessage } from 'http';
-import { ClientRequest } from "https";
+import { IncomingMessage, ClientRequest } from 'http';
 import * as path from 'path';
 import * as child_process from 'child_process';
 
@@ -14,6 +13,7 @@ interface LLMOptions {
     replace?: boolean;
     useLocalModel?: boolean;
     maxTokens?: number;
+    url?: string;
 }
 
 interface LocalModelProcess {
@@ -22,7 +22,7 @@ interface LocalModelProcess {
 }
 
 export class LLMExtension {
-    private activeRequest: https.ClientRequest | null = null;
+    private activeRequest: ClientRequest | null = null;
     private localModelProcess: LocalModelProcess | null = null;
     private outputBuffer: string = '';  // Added for output buffering
     private writeTimeout: NodeJS.Timeout | null = null;
@@ -101,7 +101,8 @@ export class LLMExtension {
                 return;
             }
     
-            const pythonScript = path.join(__dirname, 'llama_inference.py');
+            const llamaDir = path.join(__dirname, 'llama');
+            const pythonScript = path.join(llamaDir, 'llama_inference.py');
             const args = [
                 '--model-path', opts.modelPath,
                 '--prompt', prompt,
@@ -109,19 +110,31 @@ export class LLMExtension {
                 '--system-prompt', opts.systemPrompt || ''
             ];
     
-            const process = child_process.spawn('python', [pythonScript, ...args]);
-            this.localModelProcess = process;
+            const env = {
+                ...process.env,
+                PYTHONPATH: `${llamaDir}:${process.env.PYTHONPATH || ''}`
+            };
+    
+            const childProcess = child_process.spawn('python', [pythonScript, ...args], {
+                cwd: llamaDir,
+                env: env
+            });
+    
+            this.localModelProcess = {
+                process: childProcess,
+                kill: () => childProcess.kill()
+            };
             
-            process.stdout.on('data', async (data: Buffer) => {
+            childProcess.stdout.on('data', async (data: Buffer) => {
                 const text = data.toString();
                 await this.writeTextAtCursor(text);
             });
     
-            process.stderr.on('data', (data: Buffer) => {
+            childProcess.stderr.on('data', (data: Buffer) => {
                 console.error(`Error from local model: ${data.toString()}`);
             });
     
-            process.on('close', (code) => {
+            childProcess.on('close', (code) => {
                 this.localModelProcess = null;
                 if (code === 0) {
                     resolve();
@@ -132,7 +145,7 @@ export class LLMExtension {
         });
     }
 
-    private makeAnthropicRequest(opts: LLMOptions, prompt: string): https.ClientRequest {
+    private makeAnthropicRequest(opts: LLMOptions, prompt: string): ClientRequest {
         const apiKey = opts.apiKeyName ? process.env[opts.apiKeyName] : undefined;
         
         const data = {
@@ -155,7 +168,7 @@ export class LLMExtension {
         return this.makeStreamingRequest(opts.url!, data, requestOptions, this.handleAnthropicResponse.bind(this));
     }
 
-    private makeOpenAIRequest(opts: LLMOptions, prompt: string): https.ClientRequest {
+    private makeOpenAIRequest(opts: LLMOptions, prompt: string): ClientRequest {
         const apiKey = opts.apiKeyName ? process.env[opts.apiKeyName] : undefined;
         
         const data = {
@@ -184,7 +197,7 @@ export class LLMExtension {
         data: any, 
         options: https.RequestOptions, 
         handleResponse: (chunk: string) => void
-    ): https.ClientRequest {
+    ): ClientRequest {
         const request = https.request(url, options, (response: IncomingMessage) => {
             response.setEncoding('utf8');
             let buffer = '';
@@ -290,7 +303,7 @@ export class LLMExtension {
                     this.activeRequest = this.makeOpenAIRequest(opts, prompt);
                 }
             }
-        } catch (error) {
+        } catch (error:any) {
             vscode.window.showErrorMessage(`Error during LLM inference: ${error.message}`);
         }
     }

@@ -40,7 +40,7 @@ def main():
         with torch.inference_mode():
             # Load model weights and tokenizer
             model_params = LLAMA_1B_PARAMS
-            xfmr_weights = load_weights(Path(args.model_path))
+            xfmr_weights = load_weights(Path(args.model_path) / 'consolidated.00.pth')
             tokenizer = Tokenizer(Path(args.model_path) / 'tokenizer.model')
 
             # Prepare prompt
@@ -49,8 +49,9 @@ def main():
             else:
                 full_prompt = args.prompt
                 
-            tokens = tokenizer.encode(full_prompt, bos=True, eos=False)
-            tokens = torch.tensor([tokens], dtype=torch.long).to(device)
+            raw_tokens = tokenizer.encode(full_prompt, bos=False, eos=False, allowed_special='all')
+            gen_tokens = None
+            tokens = torch.tensor([raw_tokens], dtype=torch.long).to(device)
             
             # Initialize generation
             bsz, seqlen = tokens.shape
@@ -81,7 +82,7 @@ def main():
                 attn_mask=attn_mask
             )
             
-            next_token = sample(gen_tokens, logits, scores)
+            next_token = torch.argmax(logits[:, -1], dim=-1, keepdim=True).to(torch.int32)
             gen_tokens = next_token
             
             # Print first token
@@ -89,7 +90,7 @@ def main():
             sys.stdout.flush()
             
             cur_pos = seqlen
-            stop_tokens = torch.tensor([tokenizer.encode(token)[0] for token in ['<|endoftext|>', '</s>']], device=device)
+            stop_tokens = torch.tensor([tokenizer.encode(token, bos=False, eos=False)[0] for token in ['<|endoftext|>', '</s>']], device=device)
             
             # Generate tokens
             while cur_pos < args.max_tokens:
@@ -113,6 +114,13 @@ def main():
                 # Print token
                 sys.stdout.write(tokenizer.decode([next_token.item()]))
                 sys.stdout.flush()
+
+    except torch.cuda.OutOfMemoryError as e:
+        print(f"CUDA out of memory: {str(e)}", file=sys.stderr)
+        sys.exit(2)
+    except ImportError as e:
+        print(f"Missing dependency: {str(e)}", file=sys.stderr)
+        sys.exit(3)
 
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)

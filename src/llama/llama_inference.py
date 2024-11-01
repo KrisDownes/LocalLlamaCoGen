@@ -9,6 +9,7 @@ from weights import load_weights
 from tokenizer import Tokenizer
 from kvcache import KVCache
 from sampler import sample
+from prompts import create_prompt_template
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 500000.0, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -45,9 +46,9 @@ def main():
 
             # Prepare prompt
             if args.system_prompt:
-                full_prompt = f"{args.system_prompt}\n\n{args.prompt}"
+                full_prompt = create_prompt_template(f"{args.system_prompt}",args.prompt)
             else:
-                full_prompt = args.prompt
+                full_prompt = create_prompt_template(f"{args.system_prompt}",args.prompt)
                 
             raw_tokens = tokenizer.encode(full_prompt, bos=False, eos=False, allowed_special='all')
             gen_tokens = None
@@ -90,6 +91,7 @@ def main():
             sys.stdout.flush()
             
             cur_pos = seqlen
+            stop = torch.tensor([128001, 128008, 128009], device=device, dtype=torch.int32)
             stop_tokens = torch.tensor([tokenizer.encode(token, bos=False, eos=False)[0] for token in ['<|endoftext|>', '</s>']], device=device)
             
             # Generate tokens
@@ -106,7 +108,7 @@ def main():
                 
                 next_token = sample(gen_tokens, logits, scores)
                 
-                if next_token.item() in stop_tokens:
+                if torch.isin(next_token, stop).any():
                     break
                     
                 gen_tokens = torch.cat((gen_tokens, next_token), dim=1)

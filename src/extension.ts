@@ -20,7 +20,7 @@ interface LocalModelProcess {
     process: child_process.ChildProcess;
     kill: () => void;
 }
-
+const LLAMA_BASE_DIR = path.join(__dirname, '..', 'src', 'llama');
 export class LLMExtension {
     private activeRequest: ClientRequest | null = null;
     private localModelProcess: LocalModelProcess | null = null;
@@ -30,6 +30,16 @@ export class LLMExtension {
     constructor(private context: vscode.ExtensionContext) {}
 
     activate() {
+        
+
+        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            const settingsPath = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, '.vscode', 'settings.json');
+            vscode.workspace.fs.stat(settingsPath).then(
+                () => console.log('settings.json found at:', settingsPath.fsPath),
+                () => console.log('settings.json not found at:', settingsPath.fsPath)
+            );
+        }
+
         const invokeCommand = vscode.commands.registerCommand('vscode-local-llm.invoke', () => {
             this.invokeLLM();
         });
@@ -41,17 +51,34 @@ export class LLMExtension {
         this.context.subscriptions.push(invokeCommand, cancelCommand);
     }
 
-    private getConfig() {
-        const config = vscode.workspace.getConfiguration('localLLM');
+    private getConfig(): LLMOptions {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const config = workspaceFolder 
+            ? vscode.workspace.getConfiguration('localLLM', workspaceFolder.uri)
+            : vscode.workspace.getConfiguration('localLLM');
+        
+
+        const allConfigs = vscode.workspace.getConfiguration();
+
+        const modelPath = config.get<string>('modelPath');
+        const apiUrl = config.get<string>('apiUrl');
+        const apiKeyName = config.get<string>('apiKeyName');
+        const model = config.get<string>('model');
+        const systemPrompt = config.get<string>('systemPrompt');
+        const replaceSelection = config.get<boolean>('replaceSelection');
+        const useLocalModel = config.get<boolean>('useLocalModel');
+        const maxTokens = config.get<number>('maxTokens');
+
+
         return {
-            modelPath: config.get<string>('modelPath', ''),
-            apiUrl: config.get<string>('apiUrl', ''),
-            apiKeyName: config.get<string>('apiKeyName', ''),
-            model: config.get<string>('model', ''),
-            systemPrompt: config.get<string>('systemPrompt', 'You are a helpful assistant.'),
-            replaceSelection: config.get<boolean>('replaceSelection', false),
-            useLocalModel: config.get<boolean>('useLocalModel', false),
-            maxTokens: config.get<number>('maxTokens', 4096)
+            modelPath: modelPath || '',
+            apiUrl: apiUrl || '',
+            apiKeyName: apiKeyName || '',
+            model: model || '',
+            systemPrompt: systemPrompt || 'You are a helpful assistant.',
+            replace: replaceSelection || false,
+            useLocalModel: useLocalModel || false,
+            maxTokens: maxTokens || 4096
         };
     }
 
@@ -94,15 +121,17 @@ export class LLMExtension {
         }
     }
 
-    private invokeLocalModel(prompt: string, opts: LLMOptions): Promise<void> {
+    private async invokeLocalModel(prompt: string, opts: LLMOptions): Promise<void> {
         return new Promise((resolve, reject) => {
+            
             if (!opts.modelPath) {
-                reject(new Error('Model path not configured'));
+                const error = new Error('Model path not configured');
+                reject(error);
                 return;
             }
     
-            const llamaDir = path.join(__dirname, 'llama');
-            const pythonScript = path.join(llamaDir, 'llama_inference.py');
+            const llamaDir = LLAMA_BASE_DIR;
+            const pythonScript = path.join(LLAMA_BASE_DIR, 'llama_inference.py');
             const args = [
                 '--model-path', opts.modelPath,
                 '--prompt', prompt,
@@ -268,18 +297,19 @@ export class LLMExtension {
         }
 
         const editor = vscode.window.activeTextEditor;
-        if (config.replaceSelection && editor && !editor.selection.isEmpty) {
+        if (config.replace && editor && !editor.selection.isEmpty) {
             await editor.edit((editBuilder) => {
                 editBuilder.delete(editor.selection);
             });
         }
+        console.log('Select text: ', prompt);
 
         const opts: LLMOptions = {
             url: config.apiUrl,
             apiKeyName: config.apiKeyName,
             model: config.model,
             systemPrompt: config.systemPrompt,
-            replace: config.replaceSelection,
+            replace: config.replace,
             modelPath: config.modelPath,
             useLocalModel: config.useLocalModel,
             maxTokens: config.maxTokens
@@ -288,7 +318,8 @@ export class LLMExtension {
         try {
             if (config.useLocalModel) {
                 if (!config.modelPath) {
-                    vscode.window.showErrorMessage('Local model path not configured');
+                    vscode.window.showErrorMessage('Local model path not configured testing!!');
+                    console.error(Error);
                     return;
                 }
                 await this.invokeLocalModel(prompt, opts);

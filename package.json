@@ -60,7 +60,7 @@
                 },
                 "localLLM.systemPrompt": {
                     "type": "string",
-                    "default": "You are a helpful assistant.",
+                    "default": "You are a Expert programming assistant and will generate the most professional and concise code. Think about your decisions and explore all possibilities but choose the most professional and concise.",
                     "description": "System prompt for the LLM"
                 },
                 "localLLM.replaceSelection": {

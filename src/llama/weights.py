@@ -47,5 +47,4 @@ def load_weights(ckpt_path: Path = Path('checkpoints\Llama3.2-1B-Instruct\consol
             output=state_dict['output.weight'].to(torch.bfloat16),
             layer_weights=layer_weights
         )
-        
         return xfmr_weights

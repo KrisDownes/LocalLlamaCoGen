@@ -75,7 +75,7 @@ export class LLMExtension {
             apiUrl: apiUrl || '',
             apiKeyName: apiKeyName || '',
             model: model || '',
-            systemPrompt: systemPrompt || 'You are a helpful assistant.',
+            systemPrompt: systemPrompt || 'You are a Expert programming assistant and will generate the most professional and concise code. Think about your decisions and explore all possibilities but choose the most professional and concise.',
             replace: replaceSelection || false,
             useLocalModel: useLocalModel || false,
             maxTokens: maxTokens || 4096

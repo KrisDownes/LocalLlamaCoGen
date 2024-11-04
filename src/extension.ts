@@ -131,7 +131,8 @@ export class LLMExtension {
             }
     
             const llamaDir = LLAMA_BASE_DIR;
-            const pythonScript = path.join(LLAMA_BASE_DIR, 'llama_inference.py');
+            const pythonScript = path.join(LLAMA_BASE_DIR, 'testing.py');
+            console.log(pythonScript)
             const args = [
                 '--model-path', opts.modelPath,
                 '--prompt', prompt,

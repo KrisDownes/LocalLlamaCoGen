@@ -3,34 +3,34 @@ import * as https from 'https';
 import { IncomingMessage, ClientRequest } from 'http';
 import * as path from 'path';
 import * as child_process from 'child_process';
+import { LLMOptions, LocalModelProcess, CompletionContext, ModelResponse, ProviderState } from './types';
 
-interface LLMOptions {
-    modelPath?: string;
-    apiUrl?: string;
-    apiKeyName?: string;
-    model?: string;
-    systemPrompt?: string;
-    replace?: boolean;
-    useLocalModel?: boolean;
-    maxTokens?: number;
-    url?: string;
-}
-
-interface LocalModelProcess {
-    process: child_process.ChildProcess;
-    kill: () => void;
-}
 const LLAMA_BASE_DIR = path.join(__dirname, '..', 'src', 'llama');
 export class LLMExtension {
     private activeRequest: ClientRequest | null = null;
     private localModelProcess: LocalModelProcess | null = null;
-    private outputBuffer: string = '';  // Added for output buffering
+    private outputBuffer: string = '';
     private writeTimeout: NodeJS.Timeout | null = null;
+    private providerState: ProviderState = {isProcessing: false};
 
     constructor(private context: vscode.ExtensionContext) {}
 
     activate() {
-        
+        const completionProvider = new LocalLLMCompletionProvider(this);
+        const documentSelectors = [
+            { scheme: 'file', language: 'typescript' },
+            { scheme: 'file', language: 'javascript' },
+            { scheme: 'file', language: 'python' },
+            { scheme: 'file', language: 'java' },
+            { scheme: 'file', language: 'cpp' },
+            { scheme: 'file', language: 'csharp' }
+        ];
+        const completionRegistration = vscode.languages.registerCompletionItemProvider(
+            documentSelectors,
+            completionProvider,
+            '.',
+            ' '
+        );
 
         if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
             const settingsPath = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, '.vscode', 'settings.json');
@@ -48,7 +48,14 @@ export class LLMExtension {
             this.cancelRequest();
         });
 
-        this.context.subscriptions.push(invokeCommand, cancelCommand);
+        const triggerCompletionCommand = vscode.commands.registerCommand(
+            'vscode-local-llm.triggerCompletion',
+            () => {
+                vscode.commands.executeCommand('editor.action.triggerSuggest');
+            }
+        );
+
+        this.context.subscriptions.push(invokeCommand, cancelCommand,triggerCompletionCommand,completionRegistration);
     }
 
     private getConfig(): LLMOptions {
@@ -79,6 +86,26 @@ export class LLMExtension {
             replace: replaceSelection || false,
             useLocalModel: useLocalModel || false,
             maxTokens: maxTokens || 4096
+        };
+    }
+
+    public static getSharedConfig(): LLMOptions {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const config = workspaceFolder 
+            ? vscode.workspace.getConfiguration('localLLM', workspaceFolder.uri)
+            : vscode.workspace.getConfiguration('localLLM');
+
+        return {
+            modelPath: config.get<string>('modelPath') || '',
+            apiUrl: config.get<string>('apiUrl') || '',
+            apiKeyName: config.get<string>('apiKeyName') || '',
+            model: config.get<string>('model') || '',
+            systemPrompt: config.get<string>('systemPrompt') || 'You are a Expert programming assistant and will generate the most professional and concise code.',
+            replace: config.get<boolean>('replaceSelection') || false,
+            useLocalModel: config.get<boolean>('useLocalModel') || false,
+            maxTokens: config.get<number>('maxTokens') || 4096,
+            completionMode: config.get<boolean>('completionMode') || false,
+            temperature: config.get<number>('temperature') || 0.7
         };
     }
 
@@ -120,8 +147,11 @@ export class LLMExtension {
             vscode.window.showInformationMessage('Local model inference cancelled');
         }
     }
+    public async getCompletion(prompt: string, opts: LLMOptions): Promise<string | void> {
+        return this.invokeLocalModel(prompt, opts);
+    }
 
-    private async invokeLocalModel(prompt: string, opts: LLMOptions): Promise<void> {
+    private async invokeLocalModel(prompt: string, opts: LLMOptions): Promise<string | void> {
         return new Promise((resolve, reject) => {
             
             if (!opts.modelPath) {
@@ -139,6 +169,11 @@ export class LLMExtension {
                 '--max-tokens', opts.maxTokens?.toString() || '4096',
                 '--system-prompt', opts.systemPrompt || ''
             ];
+
+            if (opts.completionMode) {
+                args.push('--completion-mode', 'true');
+                args.push('--temperature', opts.temperature?.toString() || '0.7');
+            }
     
             const env = {
                 ...process.env,
@@ -154,10 +189,16 @@ export class LLMExtension {
                 process: childProcess,
                 kill: () => childProcess.kill()
             };
+
+            let output = '';
             
             childProcess.stdout.on('data', async (data: Buffer) => {
                 const text = data.toString();
-                await this.writeTextAtCursor(text);
+                if (opts.completionMode) {
+                    output += text;
+                } else {
+                    await this.writeTextAtCursor(text);
+                }
             });
     
             childProcess.stderr.on('data', (data: Buffer) => {
@@ -167,7 +208,7 @@ export class LLMExtension {
             childProcess.on('close', (code) => {
                 this.localModelProcess = null;
                 if (code === 0) {
-                    resolve();
+                    resolve(opts.completionMode ? output.trim() : undefined);
                 } else {
                     reject(new Error(`Local model process exited with code ${code}`));
                 }
@@ -337,6 +378,56 @@ export class LLMExtension {
             }
         } catch (error:any) {
             vscode.window.showErrorMessage(`Error during LLM inference: ${error.message}`);
+        }
+    }
+}
+class LocalLLMCompletionProvider implements vscode.CompletionItemProvider {
+    constructor(private extension: LLMExtension) {}
+
+    async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken
+    ): Promise<vscode.CompletionItem[]> {
+        try {
+            const config = LLMExtension.getSharedConfig();
+            if (!config.useLocalModel || !config.modelPath) {
+                return [];
+            }
+
+            const linePrefix = document.lineAt(position).text.substr(0, position.character);
+            const startLine = Math.max(0, position.line - 5);
+            const contextRange = new vscode.Range(
+                new vscode.Position(startLine, 0),
+                position
+            );
+            const context = document.getText(contextRange);
+
+            const completionOpts: LLMOptions = {
+                ...config,
+                completionMode: true,
+                maxTokens: 100,
+                temperature: 0.3,
+                systemPrompt: 'You are an expert programming assistant. Provide only the code completion, no explanations.'
+            };
+
+            const prompt = `Complete this code:\n\n${context}\nCurrent line: ${linePrefix}\n`;
+            
+            const completion = await this.extension.getCompletion(prompt, completionOpts) as string;
+
+            if (!completion || token.isCancellationRequested) {
+                return [];
+            }
+
+            const completionItem = new vscode.CompletionItem(completion.trim());
+            completionItem.kind = vscode.CompletionItemKind.Text;
+            completionItem.detail = 'Local LLM Suggestion';
+            completionItem.documentation = new vscode.MarkdownString('Generated by Local LLM');
+
+            return [completionItem];
+        } catch (error) {
+            console.error('Error providing completion:', error);
+            return [];
         }
     }
 }

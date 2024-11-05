@@ -180,6 +180,8 @@ def main():
     parser.add_argument('--prompt', required=True, help='Input prompt')
     parser.add_argument('--max-tokens', type=int, default=4096, help='Maximum number of tokens')
     parser.add_argument('--system-prompt', default='', help='System prompt')
+    parser.add_argument('--completion-mode', type=bool, default=False,
+                   help='Enable completion mode with shorter responses')
     args = parser.parse_args()
 
     # Set up interrupt handling

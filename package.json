@@ -10,7 +10,14 @@
         "Other"
     ],
     "activationEvents": [
-        "onCommand:vscode-local-llm.invoke"
+        "onCommand:vscode-local-llm.invoke",
+        "onCommand:vscode-local-llm.triggerCompletion",
+        "onLanguage:typescript",
+        "onLanguage:javascript",
+        "onLanguage:python",
+        "onLanguage:java",
+        "onLanguage:cpp",
+        "onLanguage:csharp"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -22,6 +29,18 @@
             {
                 "command": "vscode-local-llm.cancel",
                 "title": "Cancel LLM Stream"
+            },
+            {
+              "command": "vscode-local-llm.triggerCompletion",
+              "title": "Trigger LLM Completion"
+            },
+            {
+                "command": "vscode-local-llm.clearCache",
+                "title": "Clear LLM Cache"
+            },
+            {
+                "command": "vscode-local-llm.reloadModel",
+                "title": "Reload LLM Model"
             }
         ],
         "keybindings": [
@@ -33,6 +52,12 @@
             {
                 "command": "vscode-local-llm.cancel",
                 "key": "escape"
+            },
+            {
+                "command": "vscode-local-llm.triggerCompletion",
+                "key": "ctrl+space",
+                "mac": "cmd+space",
+                "when": "editorTextFocus"
             }
         ],
         "configuration": {
@@ -77,6 +102,28 @@
                     "type": "number",
                     "default": 4096,
                     "description": "Maximum number of tokens to generate"
+                },
+                "localLLM.temperature": {
+                    "type": "number",
+                    "default": 0.7,
+                    "minimum": 0,
+                    "maximum": 2,
+                    "description": "Temperature for text generation (higher = more creative)"
+                },
+                "localLLM.contextWindow": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Number of preceding lines to include as context"
+                },
+                "localLLM.autoCompletion": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable automatic code completion suggestions"
+                },
+                "localLLM.completionDelay": {
+                    "type": "number",
+                    "default": 300,
+                    "description": "Delay in milliseconds before triggering completion"
                 }
             }
         }
